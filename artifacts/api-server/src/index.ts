@@ -92,12 +92,8 @@ async function migrate() {
   }
 }
 
-try {
-  await migrate();
-} catch (err) {
-  logger.warn({ err }, "Migration skipped — DB may be unavailable or already migrated");
-}
-
+// Bind port FIRST so Render's health check passes immediately.
+// Migration runs in the background after the server is up.
 app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -105,4 +101,8 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  migrate().catch((err) => {
+    logger.warn({ err }, "Migration skipped — DB may be unavailable or already migrated");
+  });
 });
