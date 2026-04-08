@@ -48,14 +48,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAuthTokenGetter(() => localStorage.getItem(TOKEN_KEY));
     checkSetup();
+
+    // Keep Render free tier alive — ping every 14 minutes
+    if (import.meta.env.PROD) {
+      const id = setInterval(() => {
+        fetch("/api/healthz").catch(() => {});
+      }, 14 * 60 * 1000);
+      return () => clearInterval(id);
+    }
   }, []);
 
   async function checkSetup() {
     try {
-      const res = await fetch("/api/auth/setup-needed");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch("/api/auth/setup-needed", { signal: controller.signal });
+      clearTimeout(timeoutId);
       const data = await res.json();
       setSetupNeeded(data.setupNeeded);
     } catch {
+      // On timeout or network error — assume setup done, let login handle it
       setSetupNeeded(false);
     } finally {
       setIsLoading(false);
