@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API specification for Ghar Room Booking
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: bookings
+    description: Room booking operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,212 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /bookings:
+    get:
+      operationId: listBookings
+      tags: [bookings]
+      summary: List all bookings
+      responses:
+        "200":
+          description: List of bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+    post:
+      operationId: createBooking
+      tags: [bookings]
+      summary: Create a new booking quotation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingBody"
+      responses:
+        "201":
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/{id}:
+    get:
+      operationId: getBooking
+      tags: [bookings]
+      summary: Get a booking by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateBooking
+      tags: [bookings]
+      summary: Update a booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookingBody"
+      responses:
+        "200":
+          description: Booking updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteBooking
+      tags: [bookings]
+      summary: Delete a booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/{id}/approve:
+    post:
+      operationId: approveBooking
+      tags: [bookings]
+      summary: Approve a booking and start the 15-minute timer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/{id}/reactivate:
+    post:
+      operationId: reactivateBooking
+      tags: [bookings]
+      summary: Reactivate an expired or cancelled booking with a fresh 15-minute timer
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Booking reactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/{id}/whatsapp:
+    get:
+      operationId: getWhatsappMessage
+      tags: [bookings]
+      summary: Get a pre-filled WhatsApp message for a booking
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: WhatsApp message data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatsappMessage"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bookings/stats:
+    get:
+      operationId: getBookingStats
+      tags: [bookings]
+      summary: Get booking summary stats
+      responses:
+        "200":
+          description: Booking stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingStats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +242,187 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenantName:
+          type: string
+        tenantPhone:
+          type: string
+        propertyName:
+          type: string
+        roomNumber:
+          type: ["string", "null"]
+        actualRent:
+          type: integer
+        discountedRent:
+          type: integer
+        deposit:
+          type: integer
+        maintenanceFee:
+          type: integer
+        tokenAmount:
+          type: integer
+        stayDurationMonths:
+          type: integer
+        noticePeriodMonths:
+          type: integer
+        upiId:
+          type: ["string", "null"]
+        adminPhone:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, approved, paid, expired, cancelled]
+        approvedAt:
+          type: ["string", "null"]
+        offerExpiresAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - tenantName
+        - tenantPhone
+        - propertyName
+        - roomNumber
+        - actualRent
+        - discountedRent
+        - deposit
+        - maintenanceFee
+        - tokenAmount
+        - stayDurationMonths
+        - noticePeriodMonths
+        - upiId
+        - adminPhone
+        - status
+        - approvedAt
+        - offerExpiresAt
+        - createdAt
+        - updatedAt
+
+    CreateBookingBody:
+      type: object
+      properties:
+        tenantName:
+          type: string
+        tenantPhone:
+          type: string
+        propertyName:
+          type: string
+        roomNumber:
+          type: ["string", "null"]
+        actualRent:
+          type: integer
+        discountedRent:
+          type: integer
+        deposit:
+          type: integer
+        maintenanceFee:
+          type: integer
+        tokenAmount:
+          type: integer
+        stayDurationMonths:
+          type: integer
+        noticePeriodMonths:
+          type: integer
+        upiId:
+          type: ["string", "null"]
+        adminPhone:
+          type: ["string", "null"]
+      required:
+        - tenantName
+        - tenantPhone
+        - propertyName
+        - actualRent
+        - discountedRent
+        - deposit
+        - maintenanceFee
+        - tokenAmount
+        - stayDurationMonths
+        - noticePeriodMonths
+
+    UpdateBookingBody:
+      type: object
+      properties:
+        tenantName:
+          type: string
+        tenantPhone:
+          type: string
+        propertyName:
+          type: string
+        roomNumber:
+          type: ["string", "null"]
+        actualRent:
+          type: integer
+        discountedRent:
+          type: integer
+        deposit:
+          type: integer
+        maintenanceFee:
+          type: integer
+        tokenAmount:
+          type: integer
+        stayDurationMonths:
+          type: integer
+        noticePeriodMonths:
+          type: integer
+        upiId:
+          type: ["string", "null"]
+        adminPhone:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, approved, paid, expired, cancelled]
+
+    WhatsappMessage:
+      type: object
+      properties:
+        message:
+          type: string
+        url:
+          type: string
+        phone:
+          type: string
+      required:
+        - message
+        - url
+        - phone
+
+    BookingStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        approved:
+          type: integer
+        paid:
+          type: integer
+        expired:
+          type: integer
+        cancelled:
+          type: integer
+        totalRevenue:
+          type: integer
+      required:
+        - total
+        - pending
+        - approved
+        - paid
+        - expired
+        - cancelled
+        - totalRevenue

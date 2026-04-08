@@ -1,0 +1,51 @@
+the full picture of everything built in Gharpayy:
+
+What's built
+4 ways to capture a booking
+1. Admin Push (your main flow)
+
+You create a quotation with tenant name, property, rent, token amount
+System generates a unique payment link
+You activate it → 15-minute countdown starts
+WhatsApp message auto-generated, you send it to the tenant
+Tenant opens the link, sees the offer timer, pays via UPI QR
+2. Tenant Self-Request (/request)
+
+Share the /request link anywhere — WhatsApp broadcast, Instagram bio, website
+Tenant fills in their own name, phone, move-in date, budget, message
+You see the request appear on your dashboard as "Pending"
+You open it, set the price and token, activate the offer
+Timer starts, payment link goes to tenant
+3. Walk-in / Instant (on the New Quotation form)
+
+Toggle "Instant Booking" on when a tenant is physically in front of you
+No pending stage — offer activates immediately on creation
+Tenant scans and pays on the spot
+4. Urgency Reminder
+
+On any active booking, generate a follow-up WhatsApp message
+Adapts tone based on how much time is left — urgent if near expiry
+Conversion Insights (/insights)
+Overall funnel — how many bookings created → activated → paid
+Per-flow performance — which of the 3 booking sources converts best
+At-risk list — bookings sitting too long without payment
+Actionable verdict per flow — what's working, what's collapsing
+Multi-agent / Multi-zone (just built)
+Zones — create geographic areas (Koramangala, Whitefield, etc.)
+Teammates — add staff, assign them to a zone, give them a PIN
+3 roles:
+Superadmin — sees all zones, manages everything
+Zone Admin — manages their zone + can add agents
+Agent — manages their zone's bookings only
+Each teammate logs in with phone + PIN, sees only their zone's data
+Zone name shows in the dashboard header so it's always clear which zone you're in
+How to start using zones
+Log in → tap the settings gear in the top-right
+Go to Zones tab → create your first zone (e.g. "Koramangala", slug: koramangala)
+Go to Teammates tab → add your first team member, assign them to that zone, set their PIN
+They open the app on their phone, enter their phone + PIN — done
+All bookings they create are tagged to their zone automatically
+Tenant links are always public
+/bookings/:id — payment page, no login needed
+/request — self-request form, no login needed
+You can zone-target the request form by sharing /request?zone=koramangala so requests go to the right

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Ghar Room Booking"
+version = "1.0.0"
+id = "artifacts/ghar-booking"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19952
+
+[services.development]
+run = "pnpm --filter @workspace/ghar-booking run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ghar-booking", "run", "build" ]
+publicDir = "artifacts/ghar-booking/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19952"
+BASE_PATH = "/"
