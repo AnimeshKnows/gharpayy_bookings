@@ -27,6 +27,7 @@ const bookingFields = {
   source: zod.string(),
   status: zod.enum(["pending", "approved", "paid", "expired", "cancelled"]),
   notes: zod.string().nullable(),
+  adminUnread: zod.boolean(),
   viewedAt: zod.string().nullable(),
   approvedAt: zod.string().nullable(),
   offerExpiresAt: zod.string().nullable(),

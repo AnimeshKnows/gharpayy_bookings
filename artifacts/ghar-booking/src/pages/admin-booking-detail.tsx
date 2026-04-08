@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import {
   useGetBooking,
@@ -141,6 +141,16 @@ export default function AdminBookingDetail() {
     adminPhone: "",
   });
   const [pricingReady, setPricingReady] = useState(false);
+
+  // Auto-clear admin notification when this booking is opened
+  useEffect(() => {
+    if (booking?.adminUnread) {
+      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+      fetch(`${base}/api/bookings/${bookingId}/mark-read`, { method: "POST" })
+        .then(() => queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() }))
+        .catch(() => {});
+    }
+  }, [booking?.id, booking?.adminUnread]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: getGetBookingQueryKey(bookingId) });

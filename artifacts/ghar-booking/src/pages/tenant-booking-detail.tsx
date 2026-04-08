@@ -131,6 +131,18 @@ function CardHero({ booking, label }: { booking: { propertyName: string; roomNum
   );
 }
 
+// ─── Load Razorpay checkout.js script ────────────────────────────────────────
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if ((window as any).Razorpay) { resolve(true); return; }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function TenantBookingDetail() {
   const { id } = useParams();
@@ -138,8 +150,8 @@ export default function TenantBookingDetail() {
   const [timerDone, setTimerDone] = useState(false);
   const [copiedUpi, setCopiedUpi] = useState(false);
   const [paidNotified, setPaidNotified] = useState(false);
-  const [claimingPayment, setClaimingPayment] = useState(false);
-  const [claimError, setClaimError] = useState<string | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const { data: booking, isLoading, refetch } = useGetBooking(bookingId, {
     query: {
@@ -162,13 +174,90 @@ export default function TenantBookingDetail() {
     }
   };
 
-  const claimPayment = async () => {
-    if (claimingPayment || paidNotified) return;
-    setClaimingPayment(true);
-    setClaimError(null);
+  const payWithRazorpay = async () => {
+    if (paymentLoading || paidNotified) return;
+    setPaymentLoading(true);
+    setPaymentError(null);
     try {
       const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-      const res = await fetch(`${base}/api/bookings/${bookingId}/claim-payment`, { method: "POST" });
+
+      // Step 1: Create order on backend
+      const orderRes = await fetch(`${base}/api/bookings/${bookingId}/create-payment-order`, { method: "POST" });
+      if (!orderRes.ok) {
+        const err = await orderRes.json().catch(() => ({}));
+        if (err.error === "payment_gateway_unavailable") {
+          setPaymentError("Online payment is temporarily unavailable. Please use the UPI QR below and tap "I've Paid" once done.");
+        } else {
+          throw new Error(err.error ?? "Could not initiate payment");
+        }
+        setPaymentLoading(false);
+        return;
+      }
+      const order = await orderRes.json() as {
+        orderId: string; keyId: string; amount: number; currency: string;
+        tenantName: string; tenantPhone: string; tenantEmail: string; description: string;
+      };
+
+      // Step 2: Load Razorpay checkout.js
+      const loaded = await loadRazorpayScript();
+      if (!loaded) throw new Error("Could not load payment interface. Check your internet connection.");
+
+      // Step 3: Open Razorpay checkout popup
+      await new Promise<void>((resolve, reject) => {
+        const rzp = new (window as any).Razorpay({
+          key: order.keyId,
+          amount: order.amount,
+          currency: order.currency,
+          order_id: order.orderId,
+          name: "Gharpayy",
+          description: order.description,
+          prefill: { name: order.tenantName, contact: order.tenantPhone, email: order.tenantEmail },
+          theme: { color: "#c9a84c" },
+          modal: { ondismiss: () => { setPaymentLoading(false); resolve(); } },
+          handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
+            try {
+              // Step 4: Verify signature on backend and mark booking paid
+              const verifyRes = await fetch(`${base}/api/bookings/${bookingId}/claim-payment`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_signature: response.razorpay_signature,
+                }),
+              });
+              if (!verifyRes.ok) {
+                const err = await verifyRes.json().catch(() => ({}));
+                throw new Error(err.error ?? "Payment verification failed");
+              }
+              setPaidNotified(true);
+              await refetch();
+              resolve();
+            } catch (e: unknown) {
+              reject(e);
+            }
+          },
+        });
+        rzp.open();
+      });
+    } catch (e: unknown) {
+      setPaymentError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  // Fallback: if gateway unavailable, allow UPI self-report after user sees the error
+  const [showFallbackClaim, setShowFallbackClaim] = useState(false);
+  const [claimingFallback, setClaimingFallback] = useState(false);
+
+  const claimFallback = async () => {
+    if (claimingFallback || paidNotified) return;
+    setClaimingFallback(true);
+    setPaymentError(null);
+    try {
+      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+      const res = await fetch(`${base}/api/bookings/${bookingId}/claim-payment-fallback`, { method: "POST" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Could not confirm payment");
@@ -176,9 +265,9 @@ export default function TenantBookingDetail() {
       setPaidNotified(true);
       await refetch();
     } catch (e: unknown) {
-      setClaimError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
+      setPaymentError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
-      setClaimingPayment(false);
+      setClaimingFallback(false);
     }
   };
 
@@ -556,18 +645,42 @@ export default function TenantBookingDetail() {
             </div>
 
             {/* CTA buttons */}
-            {claimError && (
+            {paymentError && (
               <div style={{ background: "rgba(209,79,79,0.10)", border: "1px solid rgba(209,79,79,0.25)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#e08080", marginBottom: 8 }}>
-                {claimError}
+                {paymentError}
+                {paymentError.includes("temporarily unavailable") && !showFallbackClaim && (
+                  <button
+                    style={{ display: "block", marginTop: 8, fontSize: 12, color: "#c9a84c", background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline" }}
+                    onClick={() => setShowFallbackClaim(true)}
+                  >
+                    I've paid via UPI — notify team manually
+                  </button>
+                )}
               </div>
             )}
-            <button
-              className={`gp-btn ${paidNotified ? "gp-btn-green" : "gp-btn-gold"}`}
-              onClick={claimPayment}
-              disabled={claimingPayment || paidNotified}
-            >
-              {claimingPayment ? "Confirming…" : paidNotified ? "✓ Room Locked — Payment Received" : "⚡ I've Paid — Confirm Payment"}
-            </button>
+            {!paidNotified && !showFallbackClaim && (
+              <button
+                className={`gp-btn gp-btn-gold`}
+                onClick={payWithRazorpay}
+                disabled={paymentLoading}
+              >
+                {paymentLoading ? "Opening payment…" : "⚡ Pay Now — Lock This Room"}
+              </button>
+            )}
+            {!paidNotified && showFallbackClaim && (
+              <button
+                className="gp-btn gp-btn-gold"
+                onClick={claimFallback}
+                disabled={claimingFallback}
+              >
+                {claimingFallback ? "Notifying team…" : "⚡ I've Paid via UPI — Notify Team"}
+              </button>
+            )}
+            {paidNotified && (
+              <button className="gp-btn gp-btn-green" disabled>
+                ✓ Room Locked — Payment Confirmed
+              </button>
+            )}
             {notifyMsg && !paidNotified && (
               <button
                 className="gp-btn gp-btn-wa"

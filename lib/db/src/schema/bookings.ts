@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { zonesTable } from "./zones";
@@ -26,6 +26,9 @@ export const bookingsTable = pgTable("bookings", {
   zoneId: integer("zone_id").references(() => zonesTable.id),
   assignedToId: integer("assigned_to_id").references(() => teammatesTable.id),
   notes: text("notes"),
+  razorpayOrderId: text("razorpay_order_id"),
+  razorpayPaymentId: text("razorpay_payment_id"),
+  adminUnread: boolean("admin_unread").notNull().default(false),
   viewedAt: timestamp("viewed_at", { withTimezone: true }),
   approvedAt: timestamp("approved_at", { withTimezone: true }),
   offerExpiresAt: timestamp("offer_expires_at", { withTimezone: true }),

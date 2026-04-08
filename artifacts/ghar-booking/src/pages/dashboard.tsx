@@ -15,6 +15,7 @@ import {
   BarChart3,
   Settings,
   Eye,
+  Bell,
 } from "lucide-react";
 import { StatusBadge } from "@/components/booking-status-badge";
 import { formatCurrency } from "@/lib/utils";
@@ -30,6 +31,8 @@ export default function Dashboard() {
   const tenantRequestCount = bookings?.filter(
     (b) => b.source === "tenant" && b.status === "pending"
   ).length ?? 0;
+
+  const unreadCount = bookings?.filter((b) => b.adminUnread).length ?? 0;
 
   const requestFormUrl = `${window.location.origin}${import.meta.env.BASE_URL}request`;
 
@@ -65,6 +68,14 @@ export default function Dashboard() {
             <Button variant="outline" size="icon" className="sm:hidden h-8 w-8" onClick={copyRequestLink}>
               <Copy className="w-3.5 h-3.5" />
             </Button>
+            {unreadCount > 0 && (
+              <div className="relative flex items-center">
+                <Bell className="w-5 h-5 text-amber-500" />
+                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 leading-none">
+                  {unreadCount}
+                </span>
+              </div>
+            )}
             <Link href="/settings">
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                 <Settings className="w-4 h-4" />
@@ -244,11 +255,14 @@ export default function Dashboard() {
                   return (
                     <Link key={booking.id} href={`/bookings/${booking.id}/admin`}>
                       <div
-                        className="p-4 sm:p-6 flex items-center justify-between hover:bg-muted/50 transition-colors cursor-pointer animate-in fade-in slide-in-from-bottom-2"
+                        className={`p-4 sm:p-6 flex items-center justify-between hover:bg-muted/50 transition-colors cursor-pointer animate-in fade-in slide-in-from-bottom-2${booking.adminUnread ? " bg-amber-50/60 border-l-2 border-l-amber-400" : ""}`}
                         style={{ animationDelay: `${i * 50}ms`, animationFillMode: "both" }}
                       >
                         <div className="flex-1 min-w-0 pr-4">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            {booking.adminUnread && (
+                              <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 animate-pulse" title="New activity" />
+                            )}
                             <h3 className="text-base font-medium text-foreground truncate">{booking.tenantName}</h3>
                             <StatusBadge status={booking.status} />
                             {isTenantReq && (
@@ -259,6 +273,11 @@ export default function Dashboard() {
                             {booking.viewedAt && booking.status === "approved" && (
                               <span className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 font-medium shrink-0">
                                 <Eye className="w-3 h-3" /> Viewed
+                              </span>
+                            )}
+                            {booking.adminUnread && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-red-50 text-red-600 border border-red-200 rounded-full px-2 py-0.5 font-medium shrink-0">
+                                New activity
                               </span>
                             )}
                           </div>

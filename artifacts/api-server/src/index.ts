@@ -78,6 +78,11 @@ async function migrate() {
         "updated_at" timestamp with time zone DEFAULT now() NOT NULL
       )
     `);
+    // Add Razorpay payment tracking columns (idempotent — safe to re-run)
+    await client.query(`ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS "razorpay_order_id" text`);
+    await client.query(`ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS "razorpay_payment_id" text`);
+    // Add admin notification tracking column
+    await client.query(`ALTER TABLE "bookings" ADD COLUMN IF NOT EXISTS "admin_unread" boolean NOT NULL DEFAULT false`);
     logger.info("Database migration complete");
   } catch (err) {
     logger.error({ err }, "Migration failed");

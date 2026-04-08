@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, inArray, lt, and, isNull, or } from "drizzle-orm";
+import crypto from "crypto";
 import { db, bookingsTable, zonesTable } from "@workspace/db";
 import { optionalAuth, requireAuth, type AuthedRequest } from "../middleware/auth";
 import {
@@ -344,10 +345,10 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
 
   const booking = await autoExpireOne(raw);
 
-  // Track first tenant view (fire and forget)
+  // Track first tenant view and flag admin unread (fire and forget)
   if (!booking.viewedAt) {
     db.update(bookingsTable)
-      .set({ viewedAt: new Date() })
+      .set({ viewedAt: new Date(), adminUnread: true })
       .where(eq(bookingsTable.id, booking.id))
       .execute()
       .catch(() => {});
@@ -414,7 +415,57 @@ router.post("/bookings/:id/approve", async (req, res): Promise<void> => {
   res.json(ApproveBookingResponse.parse(toResponse(booking)));
 });
 
-// ── Tenant: claim payment (no auth) ────────────────────────────────────────
+// ── Tenant: create Razorpay payment order ──────────────────────────────────
+
+router.post("/bookings/:id/create-payment-order", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid booking ID" }); return; }
+
+  const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id));
+  if (!booking) { res.status(404).json({ error: "Booking not found" }); return; }
+  if (booking.status !== "approved") { res.status(400).json({ error: "Offer is no longer active" }); return; }
+
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) {
+    res.status(503).json({ error: "payment_gateway_unavailable" }); return;
+  }
+
+  const amountPaise = booking.tokenAmount * 100;
+  const receipt = `booking-${booking.id}-${Date.now()}`;
+
+  const orderRes = await fetch("https://api.razorpay.com/v1/orders", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Basic ${Buffer.from(`${keyId}:${keySecret}`).toString("base64")}`,
+    },
+    body: JSON.stringify({ amount: amountPaise, currency: "INR", receipt }),
+  });
+
+  if (!orderRes.ok) {
+    const err = await orderRes.json().catch(() => ({}));
+    res.status(502).json({ error: "Failed to create payment order", detail: err }); return;
+  }
+
+  const order = (await orderRes.json()) as { id: string };
+  await db.update(bookingsTable).set({ razorpayOrderId: order.id }).where(eq(bookingsTable.id, id));
+
+  res.json({
+    orderId: order.id,
+    keyId,
+    amount: amountPaise,
+    currency: "INR",
+    bookingId: booking.id,
+    tenantName: booking.tenantName,
+    tenantPhone: booking.tenantPhone,
+    tenantEmail: booking.tenantEmail ?? "",
+    description: `Room token — ${booking.propertyName}${booking.roomNumber ? ` Rm ${booking.roomNumber}` : ""}`,
+  });
+});
+
+// ── Tenant: confirm payment (verifies Razorpay signature) ──────────────────
 
 router.post("/bookings/:id/claim-payment", async (req, res): Promise<void> => {
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -423,18 +474,75 @@ router.post("/bookings/:id/claim-payment", async (req, res): Promise<void> => {
 
   const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id));
   if (!booking) { res.status(404).json({ error: "Booking not found" }); return; }
+  if (booking.status !== "approved") { res.status(400).json({ error: "Offer is no longer active" }); return; }
 
-  if (booking.status !== "approved") {
-    res.status(400).json({ error: "Offer is no longer active" }); return;
+  const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body as {
+    razorpay_payment_id?: string;
+    razorpay_order_id?: string;
+    razorpay_signature?: string;
+  };
+
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+  // Gateway path: verify Razorpay HMAC signature
+  if (razorpay_payment_id && razorpay_order_id && razorpay_signature && keySecret) {
+    const expected = crypto
+      .createHmac("sha256", keySecret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+
+    if (expected !== razorpay_signature) {
+      res.status(400).json({ error: "Payment signature verification failed" }); return;
+    }
+
+    const [updated] = await db
+      .update(bookingsTable)
+      .set({ status: "paid", razorpayPaymentId: razorpay_payment_id, adminUnread: true })
+      .where(eq(bookingsTable.id, id))
+      .returning();
+
+    res.json({ success: true, id: updated.id, status: updated.status, verified: true }); return;
   }
+
+  // No gateway configured — reject unverified self-reports
+  res.status(400).json({
+    error: "Payment verification required. Please complete payment via the payment gateway.",
+  });
+});
+
+// ── Tenant: UPI fallback claim (only when gateway not configured) ───────────
+
+router.post("/bookings/:id/claim-payment-fallback", async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid booking ID" }); return; }
+
+  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    res.status(400).json({ error: "Please use the payment gateway to complete payment." }); return;
+  }
+
+  const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id));
+  if (!booking) { res.status(404).json({ error: "Booking not found" }); return; }
+  if (booking.status !== "approved") { res.status(400).json({ error: "Offer is no longer active" }); return; }
 
   const [updated] = await db
     .update(bookingsTable)
-    .set({ status: "paid" })
+    .set({ status: "paid", adminUnread: true })
     .where(eq(bookingsTable.id, id))
     .returning();
 
-  res.json({ success: true, id: updated.id, status: updated.status });
+  res.json({ success: true, id: updated.id, status: updated.status, verified: false });
+});
+
+// ── Admin: mark booking as read (clears notification) ──────────────────────
+
+router.post("/bookings/:id/mark-read", requireAuth, async (req: AuthedRequest, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = parseInt(rawId, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid booking ID" }); return; }
+
+  await db.update(bookingsTable).set({ adminUnread: false }).where(eq(bookingsTable.id, id));
+  res.json({ success: true });
 });
 
 // ── Reactivate ──────────────────────────────────────────────────────────────
