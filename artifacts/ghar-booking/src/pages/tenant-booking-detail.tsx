@@ -186,7 +186,7 @@ export default function TenantBookingDetail() {
       if (!orderRes.ok) {
         const err = await orderRes.json().catch(() => ({}));
         if (err.error === "payment_gateway_unavailable") {
-          setPaymentError("Online payment is temporarily unavailable. Please use the UPI QR below and tap "I've Paid" once done.");
+          setPaymentError("Online payment is temporarily unavailable. Please use the UPI QR below and tap "I\'ve Paid" once done.");
         } else {
           throw new Error(err.error ?? "Could not initiate payment");
         }
